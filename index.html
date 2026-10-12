@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>오늘의 노래 뽑기</title>
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;500;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #ffd166;
+    --ink: #fff;
+    --ink-dim: rgba(255,255,255,.78);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); background: #0b0b14; }
+  body {
+    color: var(--ink);
+    font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .bg { position: fixed; inset: 0; z-index: 0; transition: opacity 1.4s ease; }
+  #bgB { opacity: 0; }
+  .shade { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 0%, rgba(0,0,0,.28) 100%),
+                linear-gradient(to top, rgba(0,0,0,.35), rgba(0,0,0,0) 50%); }
+  #fx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+
+  main {
+    position: relative; z-index: 2;
+    min-height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 2rem 1.25rem 5rem;
+    text-align: center;
+  }
+  .count { position: fixed; top: calc(env(safe-area-inset-top, 0px) + .9rem); right: 1.1rem; z-index: 3;
+    font-size: .85rem; font-weight: 300; color: var(--ink-dim); }
+
+  .stage { width: 100%; max-width: 34rem; min-height: 22rem; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+  /* 뽑기 머신 */
+  .machine { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; width: min(15rem, 62vw); display: block; }
+  .machine[disabled] { cursor: default; }
+  .machine svg { width: 100%; height: auto; overflow: visible; filter: drop-shadow(0 18px 30px rgba(0,0,0,.4)); }
+  .machine:focus-visible { outline: 3px solid #fff; outline-offset: 6px; border-radius: 20px; }
+  .bodyfill { fill: var(--accent); transition: fill 1s ease; }
+  .machine:not(.busy):hover svg { animation: wobble .6s ease-in-out; }
+  @keyframes wobble { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-1.5deg); } 75% { transform: rotate(1.5deg); } }
+  .machine:not(.busy) .knob { animation: nudge 2.4s ease-in-out infinite; }
+  @keyframes nudge { 0%,68%,100% { transform: rotate(0); } 80% { transform: rotate(50deg); } 90% { transform: rotate(-25deg); } }
+  .machine.cranking .knob { animation: crank .8s linear infinite; }
+  @keyframes crank { to { transform: rotate(360deg); } }
+  .machine.cranking .cap { animation: jiggle .32s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes jiggle { 0%,100% { transform: translate(0,0) rotate(0); } 25% { transform: translate(4px,-9px) rotate(16deg); } 50% { transform: translate(-4px,5px) rotate(-12deg); } 75% { transform: translate(5px,2px) rotate(8deg); } }
+  .machine.cranking svg { animation: shake .22s linear infinite; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+  .dropcap { opacity: 0; }
+  .machine.dropping .dropcap { animation: drop .85s cubic-bezier(.5,0,.9,.6) both; }
+  @keyframes drop { 0% { transform: translateY(-58px); opacity: 0; } 12% { opacity: 1; } 62% { transform: translateY(0); opacity: 1; } 80% { transform: translateY(-13px); opacity: 1; } 100% { transform: translateY(0); opacity: 1; } }
+  .flash { opacity: 0; }
+  .machine.open .dropcap { animation: none; opacity: 1; }
+  .machine.open .capTop { animation: topOff .7s ease-out both; }
+  .machine.open .capBot { animation: botOff .7s ease-out both; }
+  .machine.open .flash { animation: flash .7s ease-out both; }
+  @keyframes topOff { to { transform: translate(-18px,-40px) rotate(-40deg); opacity: 0; } }
+  @keyframes botOff { to { transform: translate(18px,12px) rotate(35deg); opacity: 0; } }
+  @keyframes flash { 0% { opacity: .95; transform: scale(.2); } 100% { opacity: 0; transform: scale(3.6); } }
+  .intro { margin: 1.6rem 0 0; font-weight: 300; color: var(--ink-dim); font-size: 1rem; }
+
+  /* 뽑는 중 */
+  .roll { min-height: 9rem; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  .roll[hidden] { display: none; }
+  .roll .a { font-weight: 300; font-size: 1rem; color: var(--ink-dim); }
+  .roll .t { font-weight: 900; font-size: clamp(1.8rem, 7vw, 2.8rem); line-height: 1.2; margin-top: .3rem; filter: blur(1.5px); }
+
+  /* 결과 */
+  .result { display: none; flex-direction: column; align-items: center; }
+  .result.on { display: flex; animation: rise .9s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px) scale(.98); } to { opacity: 1; transform: none; } }
+  .artist { font-weight: 500; font-size: 1.1rem; color: var(--accent); text-shadow: 0 1px 12px rgba(0,0,0,.4); }
+  .title { margin: .35rem 0 0; font-weight: 900; font-size: clamp(2.1rem, 9vw, 3.6rem); line-height: 1.15; word-break: keep-all; text-shadow: 0 2px 24px rgba(0,0,0,.45); }
+  .mood { margin-top: 1.1rem; padding: .35rem 1rem; border: 1px solid var(--accent); border-radius: 999px; color: var(--accent); font-size: .95rem; font-weight: 500; background: rgba(0,0,0,.18); }
+  .desc { margin: 1.4rem 0 0; max-width: 28rem; font-weight: 300; font-size: 1.08rem; line-height: 1.85; color: #fff; text-shadow: 0 1px 14px rgba(0,0,0,.5); word-break: keep-all; }
+  .again { margin-top: 2rem; appearance: none; cursor: pointer; border: 1px solid rgba(255,255,255,.7); background: rgba(0,0,0,.2); color: #fff;
+    font: 500 1rem "Noto Sans KR", sans-serif; padding: .7rem 1.6rem; border-radius: 999px; transition: background .2s, color .2s; }
+  .again:hover { background: #fff; color: #111; }
+  .again:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+  /* 기록 */
+  .history { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+    padding: .7rem 1rem calc(env(safe-area-inset-bottom, 0px) + .7rem);
+    display: flex; gap: .5rem; overflow-x: auto; background: linear-gradient(to top, rgba(0,0,0,.45), transparent); }
+  .history:empty { display: none; }
+  .chip { flex: 0 0 auto; appearance: none; cursor: pointer; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.3); color: #fff;
+    font: 300 .8rem "Noto Sans KR", sans-serif; padding: .35rem .8rem; border-radius: 999px; white-space: nowrap; }
+  .chip:hover, .chip.cur { border-color: var(--accent); color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) { .machine, .machine * { animation: none !important; } .result.on { animation: none; } .bg { transition: none; } }
+
+  .boot{position:fixed;inset:0;z-index:50;background:#000;display:flex;align-items:center;justify-content:center;pointer-events:none;animation:bootOut 2.6s ease forwards}
+  .boot::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.4),transparent 55%);opacity:0;animation:bloom 2.2s ease forwards}
+  .bootT{position:relative;z-index:1;font:900 1.6rem "Noto Sans KR",sans-serif;letter-spacing:.2em;color:#fff;opacity:0;text-shadow:0 0 30px #fff;animation:bootT 2.2s ease forwards}
+  @keyframes bootOut{0%,55%{opacity:1}100%{opacity:0;visibility:hidden}}
+  @keyframes bootT{0%{opacity:0;filter:blur(8px)}35%{opacity:1;filter:blur(0)}70%{opacity:1}100%{opacity:0}}
+  @keyframes bloom{0%{opacity:0;transform:scale(.3)}50%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.6)}}
+  @keyframes mainIn{from{opacity:0;filter:brightness(.2)}to{opacity:1;filter:none}}
+  main{animation:mainIn 1.5s 1.3s both}
+  .bar{position:fixed;top:calc(env(safe-area-inset-top,0px) + .7rem);left:.8rem;z-index:5;display:flex;gap:.4rem}
+  .tb,.fc,.act{appearance:none;cursor:pointer;border:1px solid rgba(255,255,255,.4);background:rgba(0,0,0,.3);color:#fff;font:500 .82rem "Noto Sans KR",sans-serif;padding:.4rem .85rem;border-radius:999px;text-decoration:none;display:inline-block}
+  .fc.on,.tb:hover,.act:hover{background:var(--accent);color:#1a1020;border-color:var(--accent)}
+  .filters{display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center;max-width:34rem;margin:2.6rem 0 1.2rem}
+  .brk{flex-basis:100%;height:0}
+  .acts{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:1.4rem}
+  .modal{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:1rem}
+  .modal[hidden]{display:none}
+  .box{width:100%;max-width:34rem;max-height:84vh;overflow:auto;background:#16162a;border-radius:18px;padding:1.2rem;text-align:left;font-size:.95rem}
+  .box h2{margin:0 0 .8rem;font-size:1.15rem}
+  .box input[type=text]{width:100%;padding:.55rem .8rem;margin:.25rem 0;border-radius:10px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;font:inherit}
+  .row{display:flex;gap:.6rem;align-items:center;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.08)}
+  .post{padding:.6rem 0;border-bottom:1px solid rgba(255,255,255,.1);line-height:1.6}
+  .post a{color:var(--accent)}
+  .cl{float:right}
+  .toast{position:fixed;left:50%;bottom:4.5rem;transform:translateX(-50%);z-index:30;background:rgba(0,0,0,.8);padding:.6rem 1.1rem;border-radius:999px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .3s}
+  .toast.on{opacity:1}
+  @media (prefers-reduced-motion: reduce){.boot{animation-duration:.6s}.boot::after,.bootT{animation:none}main{animation:none}}
+</style>
+</head>
+<body>
+  <div class="bg" id="bgA"></div>
+  <div class="bg" id="bgB"></div>
+  <div class="shade"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <div class="boot" id="boot"><div class="bootT">오늘의 노래</div></div>
+  <div class="bar"><button class="tb" id="snd" type="button" aria-label="소리 켜기/끄기">🔊</button><button class="tb" id="openMy" type="button">내 리스트</button><button class="tb" id="openBd" type="button">게시판</button></div>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="count" id="count"></div>
+
+  <main>
+    <div class="filters" id="filters"></div>
+    <div class="stage">
+      <button class="machine" id="pick" type="button" aria-label="뽑기 시작: 손잡이 돌리기">
+        <svg viewBox="0 0 240 330" aria-hidden="true">
+          <circle cx="120" cy="100" r="80" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.55)" stroke-width="3"/>
+          <g id="caps"></g>
+          <path d="M62 66 A64 64 0 0 1 98 36" stroke="rgba(255,255,255,.75)" stroke-width="5" stroke-linecap="round" fill="none"/>
+          <rect class="bodyfill" x="42" y="168" width="156" height="140" rx="20"/>
+          <rect x="42" y="168" width="156" height="28" rx="14" fill="rgba(0,0,0,.2)"/>
+          <rect x="76" y="204" width="88" height="54" rx="12" fill="rgba(0,0,0,.28)"/>
+          <g transform="translate(120 231)"><g class="knob">
+            <circle r="19" fill="#fff"/>
+            <rect x="-4" y="-23" width="8" height="27" rx="4" fill="#2b2b3a"/>
+            <circle r="5" fill="#2b2b3a"/>
+          </g></g>
+          <rect x="82" y="268" width="76" height="34" rx="10" fill="rgba(0,0,0,.55)"/>
+          <g transform="translate(120 285)"><g class="dropcap">
+            <g class="capTop"><path d="M-15 0 A15 15 0 0 1 15 0Z" fill="#ffd166"/></g>
+            <g class="capBot"><path d="M-15 0 A15 15 0 0 0 15 0Z" fill="#ffffff"/></g>
+            <circle class="flash" r="30" fill="#fff"/>
+          </g></g>
+        </svg>
+      </button>
+      <p class="intro" id="intro">손잡이를 눌러 오늘의 노래를 뽑아 보세요</p>
+
+      <div class="roll" id="roll" hidden aria-live="polite">
+        <div class="a" id="rollA"></div>
+        <div class="t" id="rollT"></div>
+      </div>
+
+      <div class="result" id="result">
+        <div class="artist" id="rArtist"></div>
+        <h1 class="title" id="rTitle"></h1>
+        <div class="mood" id="rMood"></div>
+        <p class="desc" id="rDesc"></p>
+        <div class="acts"><a class="act" id="yt" target="_blank" rel="noopener">▶ 유튜브로 미리듣기</a><button class="act" id="fav" type="button">♡ 즐겨찾기</button><button class="act" id="toBd" type="button">📌 게시판에 공유</button></div>
+        <button class="again" id="again" type="button">다시 뽑기</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="modal" id="myModal" hidden><div class="box"><button class="tb cl" data-close type="button">닫기</button>
+    <h2>내 리스트 <small id="myCnt"></small></h2>
+    <input type="text" id="cA" placeholder="아티스트" maxlength="40"><input type="text" id="cT" placeholder="곡 제목" maxlength="60">
+    <button class="act" id="cAdd" type="button" style="margin:.4rem 0 .8rem">＋ 직접 추가</button>
+    <input type="text" id="mySearch" placeholder="곡 검색" maxlength="40"><div id="myList"></div></div></div>
+  <div class="modal" id="bdModal" hidden><div class="box"><button class="tb cl" data-close type="button">닫기</button>
+    <h2>친구 공유 게시판</h2><div id="bdSong" style="color:var(--accent);margin-bottom:.5rem"></div>
+    <input type="text" id="bdName" placeholder="닉네임" maxlength="12"><input type="text" id="bdMsg" placeholder="한마디 (80자)" maxlength="80">
+    <button class="act" id="bdPost" type="button" style="margin:.4rem 0 .8rem">뽑은 곡 올리기</button>
+    <div id="boardMsg" style="opacity:.7"></div><div id="bdList"></div></div></div>
+  <div class="history" id="history"></div>
+
+<script>
+(function () {
+  /* [아티스트, 제목, 효과, 배경색1, 배경색2, 포인트색, 분위기, 설명] */
+  var SONGS = [
+    ["소연","퇴사할게여","confetti","#1b2a4a","#3b6ea8","#ffd54a","속 시원한 해방감","제목 그대로 퇴사를 선언하는 통쾌한 곡이에요. 출근길의 답답함이 한 번에 풀리는 것 같은 가벼운 기분을 줘요."],
+    ["RESCENE","LOVE ATTACK","hearts","#4a1140","#c2305f","#ffb3d1","두근거림","갑자기 밀려오는 설렘에 심장이 먼저 반응하는 순간을 담은 상큼한 곡이에요."],
+    ["I.O.I","갑자기","sparkle","#2a1a5e","#5b6cff","#ffd1f0","산뜻한 설렘","예고 없이 찾아온 감정에 어쩔 줄 모르는 마음을 통통 튀게 그려요."],
+    ["RESCENE","Deja Vu","pulse","#10133a","#5b2a9e","#9ff3ff","몽환","어디선가 본 듯한 장면과 사람에게 끌리는 신비로운 분위기의 곡이에요."],
+    ["CORTIS","REDRED","embers","#3a0a0a","#c0281c","#ff9a7a","붉은 에너지","붉은 에너지가 터져 나오는 강렬한 비트의 곡이에요. 가만히 듣기가 어려워요."],
+    ["Taylor Swift","Cruel Summer","fireflies","#2b1055","#d6416b","#ffd27a","한여름 밤의 아슬아슬함","뜨거운 여름밤의 아슬아슬한 감정을 몰아치듯 달려가는 팝 트랙이에요. 후반부로 갈수록 벅차올라요."],
+    ["Yuuri","BETELGEUSE","stars","#070612","#4a0f2a","#ff6a45","담담한 이별","끝난 사랑을 밤하늘의 붉은 별에 겹쳐 보는 노래예요. 크게 소리치지 않고 조용히 그리워하는 온도가 좋아요."],
+    ["Hearts2Hearts","STYLE","sparkle","#182a4a","#5a8fe0","#ffffff","산뜻한 자신감","나만의 스타일로 가볍게 걸어가는 청량한 무드의 곡이에요."],
+    ["aespa","Whiplash","pulse","#0a0a1a","#4b00d6","#00f0ff","사이버 카리스마","채찍처럼 휘몰아치는 리듬과 어두운 사이버 감성이 매력적인 곡이에요."],
+    ["ROSÉ","APT.","confetti","#3a0d1e","#e0295a","#ffe14a","파티 에너지","한 번 들으면 후렴이 머릿속에서 떠나지 않는, 게임처럼 신나는 파티 송이에요."],
+    ["BTS","Dynamite","confetti","#1a1240","#e0700a","#ffe066","눈부신 여름","디스코 바이브로 기분을 확 끌어올리는 밝고 눈부신 팝이에요."],
+    ["BTS","Butter","sparkle","#2a1c05","#b8860b","#fff3b0","부드러운 자신감","버터처럼 매끄럽고 여유 있는 펑키 팝이에요. 듣는 순간 분위기가 반짝여요."],
+    ["IVE","REBEL HEART","embers","#1a1035","#c81e55","#ffb0c8","반항적인 마음","규칙에 얌전히 따르지 않는 마음을 당당하게 선언하는 곡이에요."],
+    ["IVE","LOVE DIVE","bubbles","#06264a","#2b7be0","#ffd1f7","도도한 몽환","사랑 속으로 깊이 뛰어드는 도도하고 몽환적인 분위기의 곡이에요."],
+    ["NewJeans","Hype Boy","sparkle","#16324a","#3fa0c0","#ffffff","청량한 설렘","가볍고 청량하게 마음을 두드리는 사랑스러운 곡이에요."],
+    ["NewJeans","Ditto","snow","#0f2a44","#6fa0d8","#ffffff","아련한 겨울","겨울 교실 창가 같은 아련하고 몽글몽글한 분위기의 곡이에요."],
+    ["NewJeans","Super Shy","hearts","#3a1b4f","#e0609f","#ffd6ea","수줍은 두근거림","말을 걸고 싶은데 수줍어서 망설이는 마음을 귀엽게 풀어냈어요."],
+    ["aespa","Supernova","stars","#07071a","#4b1fa8","#ff7bd5","폭발하는 별","별이 폭발하듯 압도적으로 터지는 에너지가 느껴지는 곡이에요."],
+    ["aespa","Drama","pulse","#22081f","#a3125e","#ffb03a","무대 위 드라마","한 편의 드라마처럼 긴장감 있게 전개되는 강렬한 곡이에요."],
+    ["LE SSERAFIM","ANTIFRAGILE","embers","#150f2a","#7a1fa2","#ffd166","단단한 자신감","부서지기보다 오히려 더 단단해지는 마음을 힘 있게 그려요."],
+    ["LE SSERAFIM","Perfect Night","sparkle","#0d1330","#2d3fa8","#c8b6ff","반짝이는 도시의 밤","완벽한 밤을 즐기는 사람들의 반짝이는 도시 무드가 담겨 있어요."],
+    ["ILLIT","Magnetic","pulse","#1a1d3a","#5d6bff","#ffc4e6","자석 같은 끌림","자석처럼 끌리는 마음을 귀엽고 경쾌하게 표현한 곡이에요."],
+    ["BABYMONSTER","SHEESH","embers","#1a0a0a","#a31212","#ffcf5a","거친 힙합 에너지","거칠고 힘 있는 힙합 에너지로 몰아붙이는 곡이에요."],
+    ["BLACKPINK","DDU-DU DDU-DU","embers","#0a0a0a","#c2185b","#ff8fc7","묵직한 카리스마","묵직한 비트 위에서 압도적인 존재감을 뿜어내는 곡이에요."],
+    ["BLACKPINK","How You Like That","sparkle","#120a1e","#d81b60","#ffd1e6","다시 일어서는 당당함","무너져도 다시 일어서서 당당하게 걸어가는 태도를 보여줘요."],
+    ["BLACKPINK","Shut Down","stars","#0a0a14","#6a1b9a","#ffb3d9","어둡고 우아한 한 방","어둡고 우아한 분위기 속에서 강하게 한 방을 날리는 곡이에요."],
+    ["BIGBANG","봄여름가을겨울","petals","#2a4a2a","#d67f98","#fff2b0","스쳐 가는 계절","계절이 지나가듯 스쳐 가는 사랑을 산뜻하게 풀어낸 곡이에요."],
+    ["BIGBANG","마지막 인사","rain","#14192b","#3a4a6b","#a7c4ff","쓸쓸한 작별","끝을 받아들이고 건네는 쓸쓸한 작별 인사 같은 곡이에요."],
+    ["IU","Love wins all","fireflies","#1a2244","#5b4a9e","#ffd9a8","애틋한 서사","애틋하고 서정적인 분위기로 이야기를 들려주는 곡이에요."],
+    ["IU","밤편지","stars","#0d1a3a","#2a3f7a","#ffe6a7","잔잔한 밤","조용한 밤에 건네는 편지 같은 잔잔한 서정 발라드예요."],
+    ["IU","Blueming","petals","#16305a","#4f9fd8","#ffd6e8","풋풋한 봄","풋풋하게 피어나는 마음을 산뜻한 봄 색감으로 그린 곡이에요."],
+    ["임영웅","사랑은 늘 도망가","fireflies","#2a1a12","#8a4b2a","#ffd9a0","따뜻하고 깊은 감성","놓쳐 버린 사랑을 따뜻하고 깊은 목소리로 되짚는 곡이에요."],
+    ["임영웅","우리들의 블루스","fireflies","#0f2a3a","#2f6f8f","#ffe0a0","삶을 다독이는 위로","고단한 삶을 다독여 주는 듯한 따뜻한 위로가 느껴지는 곡이에요."],
+    ["AKMU","어떻게 이별까지 사랑하겠어","rain","#171a2e","#4a3a6a","#c5b3ff","담담하게 무너지는 마음","이별 앞에서 담담하게 무너지는 마음을 잔잔하게 그려요."],
+    ["AKMU","후라이의 꿈","bubbles","#2a2a5a","#e09020","#fff3b0","동화 같은 상상","소박하고 귀여운 상상이 가득 담긴 동화 같은 곡이에요."],
+    ["DAY6","한 페이지가 될 수 있게","fireflies","#1a1f3a","#3a5a8a","#ffe0a8","함께 쌓은 시간","함께 쌓아 온 시간을 한 페이지로 남기고 싶은 마음이 따뜻하게 흘러요."],
+    ["DAY6","예뻤어","petals","#2a1f3a","#b56a8a","#ffe0ea","예쁘게 남은 그리움","지난 사랑을 예쁘게 기억하며 그리워하는 밴드 발라드예요."],
+    ["DAY6","Congratulations","confetti","#1a1a3a","#5a4ac8","#ffd166","씁쓸한 축하","겉으로는 축하하지만 속은 복잡한 마음을 록 사운드에 실었어요."],
+    ["ATEEZ","BOUNCY","embers","#2a0a05","#d9480f","#ffd43b","매콤한 파워","매운맛처럼 톡 쏘는 파워풀한 퍼포먼스가 돋보이는 곡이에요."],
+    ["ATEEZ","Deja Vu","stars","#0b0f2a","#1f3fa8","#74c0fc","웅장한 데자뷔","웅장하게 몰아치는 사운드로 데자뷔의 세계를 펼쳐 보여요."],
+    ["Stray Kids","MANIAC","pulse","#0a0a0a","#7a0f2a","#ff4d6d","광기 어린 에너지","광기 어린 에너지가 폭발하는 강렬한 곡이에요."],
+    ["Stray Kids","CASE 143","hearts","#2a1140","#d6407a","#ffd0e4","재치 있는 고백","사랑 고백을 재치 있고 상큼하게 풀어낸 곡이에요."],
+    ["SEVENTEEN","손오공","embers","#1a0f2a","#d97706","#ffd43b","호쾌한 질주","구름을 타고 날아오를 듯한 호쾌한 에너지가 가득한 곡이에요."],
+    ["SEVENTEEN","아주 NICE","confetti","#0f2a4a","#1aa5bd","#ffe066","기분 좋은 응원가","기분 좋음이 멈추지 않는 신나는 응원가 같은 곡이에요."],
+    ["ENHYPEN","XO","sparkle","#1a1035","#7048e8","#ffc9f0","감각적인 설렘","설레는 마음을 감각적인 사운드로 풀어낸 곡이에요."],
+    ["TXT","Deja Vu","stars","#0f1030","#3b5bdb","#a5d8ff","꿈결 같은 판타지","꿈결 같은 판타지 분위기가 감도는 곡이에요."],
+    ["ZEROBASEONE","Feel the POP","confetti","#241050","#d02a7a","#ffe066","터지는 청량함","팝콘처럼 터지는 청량한 에너지가 가득한 곡이에요."],
+    ["RIIZE","Love 119","sparkle","#14204a","#d9480f","#ffe8cc","발랄한 긴급 신호","사랑이 급할 때 부르는 119라는 발상이 재미있는 발랄한 팝 밴드 사운드예요."],
+    ["RIIZE","Get A Guitar","fireflies","#241a10","#c47a1f","#ffe3a3","경쾌한 청춘","기타를 메고 달려가는 청춘의 경쾌함이 느껴지는 곡이에요."],
+    ["NCT DREAM","Candy","sparkle","#3a1650","#e0508a","#ffffff","말랑한 달콤함","사탕처럼 달콤하고 말랑한 분위기의 곡이에요."],
+    ["NCT 127","Fact Check","pulse","#0a1a2a","#0b7285","#66d9e8","거침없는 스트리트","몰아치는 사운드가 인상적인 스트리트 무드의 곡이에요."],
+    ["(G)I-DLE","퀸카","sparkle","#2a0f3a","#d63384","#ffd6e8","당당한 자신감","스스로를 퀸카라 부르는 당당한 자신감이 반짝이는 곡이에요."],
+    ["(G)I-DLE","TOMBOY","embers","#1a0a12","#c2255c","#ffb0c8","규칙 깨는 태도","규칙을 깨고 거침없이 나아가는 태도가 통쾌한 곡이에요."],
+    ["TWICE","What Is Love?","hearts","#3a1050","#e0507f","#ffd6e8","궁금한 사랑","사랑이 뭔지 궁금해하는 마음의 상상을 발랄하게 그린 곡이에요."],
+    ["TWICE","FANCY","sparkle","#1a0a3a","#ae3ec9","#ffa8e8","화려한 직진","과감하고 화려하게 직진하는 사랑을 보여주는 곡이에요."],
+    ["Red Velvet","Psycho","stars","#0a1a3a","#5c3d99","#e5dbff","우아하고 서늘한","우아하면서도 서늘한 분위기가 매력적인 곡이에요."],
+    ["Red Velvet","Feel My Rhythm","petals","#1a2a4a","#7a5aa8","#ffe0f0","화사한 클래식","클래식한 선율 위에 화사한 리듬이 흐르는 곡이에요."],
+    ["ITZY","WANNABE","confetti","#2a0f2a","#d9480f","#ffe066","나다운 선언","누구도 아닌 나답게 살겠다는 당당한 선언이 담긴 곡이에요."],
+    ["STAYC","ASAP","sparkle","#10284a","#1aa5bd","#ffe066","통통 튀는 설렘","빨리 만나고 싶은 설렘을 통통 튀는 리듬으로 표현한 곡이에요."],
+    ["KISS OF LIFE","Sticky","bubbles","#2a0f0f","#c92a2a","#ffc9c9","끈적한 그루브","끈적하게 달라붙는 중독성 있는 그루브가 매력적인 곡이에요."],
+    ["KISS OF LIFE","Midas Touch","sparkle","#241a05","#b8860b","#fff3bf","황금빛 무드","손대는 것마다 금이 되는 것 같은 황금빛 무드의 곡이에요."],
+    ["NMIXX","DASH","pulse","#0f1a3a","#4c6ef5","#ffd43b","질주하는 리듬","질주하듯 달리는 리듬 변화가 재미있는 믹스 팝이에요."],
+    ["IVE","After LIKE","sparkle","#1a2a4a","#d9507f","#ffe0ee","발랄한 여운","사랑 다음에도 이어지는 발랄한 여운을 담은 곡이에요."],
+    ["IVE","I AM","stars","#1a1040","#7950f2","#ffe066","벅찬 선언","자신을 향해 벅차게 외치는 선언 같은 곡이에요."],
+    ["LE SSERAFIM","EASY","sparkle","#2a0f2a","#d63384","#ffd6f0","여유로운 도발","쉽게 봤다간 큰코다친다는 여유 있는 도발이 느껴지는 곡이에요."],
+    ["LE SSERAFIM","UNFORGIVEN","embers","#2a1a0a","#a0522d","#ffd699","서부극 같은 분위기","서부극을 떠올리게 하는 거친 분위기의 곡이에요."],
+    ["NewJeans","Attention","sparkle","#10304a","#3a9be0","#e0f4ff","산뜻한 시선","짧고 산뜻하게 시선을 사로잡는 곡이에요."],
+    ["BLACKPINK","Pink Venom","embers","#12060e","#c2185b","#ff8fc7","달콤한 독","달콤한 이름과 달리 독처럼 퍼지는 카리스마가 있는 곡이에요."],
+    ["BTS","Boy With Luv","hearts","#2a1a4a","#e0608f","#d0ebff","작은 것의 사랑","작은 것에서 느끼는 사랑의 두근거림을 밝게 그린 곡이에요."],
+    ["Jung Kook","Seven","fireflies","#10203a","#3a5a8a","#ffd6a5","달콤한 일주일","일주일 내내 함께하고 싶은 마음을 달콤하게 풀어낸 팝이에요."],
+    ["Jung Kook","Standing Next to You","sparkle","#2a1a05","#c2691e","#ffe066","펑키한 그루브","어깨를 나란히 선 듯 흥겹게 흐르는 펑키 그루브의 곡이에요."],
+    ["V","Love Me Again","fireflies","#101a2a","#2a4a5a","#ffd6a5","부드러운 R&B","부드럽고 느긋한 R&B 무드가 밤공기와 잘 어울리는 곡이에요."],
+    ["Jimin","Like Crazy","pulse","#0a0a1a","#5a2ea8","#b197fc","빠져드는 몽환","미친 듯 빠져드는 감정을 몽환적인 일렉트로 팝에 담은 곡이에요."],
+    ["ROSÉ","toxic till the end","rain","#14141e","#4a2a3a","#ff8fa3","서로에게 독이 되는","서로에게 독이 되는 관계를 담담하게 풀어낸 곡이에요."],
+    ["ZICO","아무노래","confetti","#241a0a","#d98a00","#ffe066","아무렇게나 신나게","아무 노래나 틀고 춤추자는 가벼움이 챌린지 열풍으로 이어졌던 곡이에요."],
+    ["BIBI","밤양갱","bubbles","#241020","#a34a5a","#ffd6a5","달콤쌉싸름한 밤","달콤함과 쓸쓸함이 함께 있는 밤 같은 곡이에요."],
+    ["이무진","신호등","fireflies","#1a2438","#3a6a8a","#ffe066","일상의 산뜻함","일상 속 신호등 앞에서 흥얼거리게 되는 산뜻한 기타 팝이에요."],
+    ["이무진","청춘만화","petals","#1a3a5a","#d98000","#fff3b0","풋풋한 기억","학창 시절 만화 같은 풋풋한 기억을 떠올리게 하는 곡이에요."],
+    ["폴킴","모든 날, 모든 순간","fireflies","#241a10","#8a5a2a","#ffe0b3","따뜻한 고백","따뜻하고 진심 어린 고백이 담긴 곡이에요."],
+    ["성시경","너의 모든 순간","petals","#2a1a2a","#a86a7a","#ffe0ea","부드러운 사랑","부드러운 목소리로 전하는 다정한 사랑 노래예요."],
+    ["10CM","폰서트","stars","#101830","#2a3a6a","#ffe066","전화 너머의 그리움","전화 너머로 전하는 라이브처럼 가깝고 그리운 분위기의 곡이에요."],
+    ["10CM","봄이 좋냐??","petals","#2a1a30","#c25a7a","#ffe0ea","투덜거리는 봄","봄노래를 살짝 뒤집어 투덜거리는 듯한 유쾌한 곡이에요."],
+    ["볼빨간사춘기","여행","bubbles","#10304a","#3aa8e0","#fff3b0","훌쩍 떠나는 기분","훌쩍 떠나고 싶은 마음을 가볍게 풀어낸 곡이에요."],
+    ["잔나비","주저하는 연인들을 위해","fireflies","#241408","#8a4a1a","#ffd9a0","옛 감성","옛 감성의 밴드 사운드가 주저하는 마음을 다정하게 감싸는 곡이에요."],
+    ["윤하","사건의 지평선","stars","#05050f","#2a1a5a","#b197fc","블랙홀의 깊이","블랙홀의 경계를 빌려 이별의 깊이를 그려낸 곡이에요."],
+    ["AKMU","200%","bubbles","#3a2a10","#d98000","#fff3b0","톡톡 튀는 고백","귀엽고 톡톡 튀는 사랑 고백이 담긴 곡이에요."],
+    ["태연","INVU","sparkle","#120a2a","#7048e8","#d0bfff","몽환적인 전율","몽환적인 일렉트로 팝 위에서 은근한 전율이 느껴지는 곡이에요."],
+    ["태연","그대라는 시","petals","#1a2a3a","#6a8aa8","#e0f0ff","시 같은 잔잔함","한 편의 시처럼 잔잔하게 흐르는 사랑 노래예요."],
+    ["헤이즈","비도 오고 그래서","rain","#101820","#3a5060","#a5d8ff","비 오는 날의 감성","비 오는 날 감성이 촉촉하게 젖어드는 곡이에요."],
+    ["박재범","MOMMAE","pulse","#0a0a12","#6a1a8a","#e599f7","세련된 R&B","묵직하고 세련된 힙합 R&B 무드의 곡이에요."],
+    ["Crush","Rush Hour","fireflies","#1a1230","#5a3a8a","#ffb86b","도시의 퇴근길","퇴근 후 도시의 바쁜 리듬을 감각적으로 담은 곡이에요."],
+    ["DEAN","instagram","pulse","#101018","#3a2a5a","#d0bfff","몽환적인 밤","몽환적인 R&B가 깊은 밤 분위기를 만들어 주는 곡이에요."],
+    ["Lauv","Paris in the Rain","rain","#18203a","#5a7aa8","#ffd6e8","빗속의 낭만","빗속 파리를 산책하는 듯한 낭만이 느껴지는 곡이에요."],
+    ["The Weeknd","Blinding Lights","pulse","#0a0a1e","#c0142a","#ff4d6d","네온의 질주","밤 도시를 질주하는 듯한 80년대 신스 팝이에요."],
+    ["Billie Eilish","BIRDS OF A FEATHER","fireflies","#0f2a3a","#3a8a9a","#ffe0e6","낮은 온도의 애정","함께 나이 들고 싶다는 마음을 낮은 온도로 담아낸 곡이에요."],
+    ["Olivia Rodrigo","vampire","embers","#1a0510","#8a0f2a","#ff8fa3","쏟아내는 감정","관계에 치인 뒤 쌓인 감정을 쏟아내듯 몰아치는 곡이에요."],
+    ["Sabrina Carpenter","Espresso","sparkle","#2a1a0f","#a86a3a","#ffe0b3","잠 못 드는 카페인","에스프레소처럼 잠 못 들게 만드는 경쾌한 팝이에요."],
+    ["Ariana Grande","we can't be friends","stars","#14102a","#4a3a8a","#d0bfff","애틋한 거리","친구로는 지낼 수 없는 애틋한 마음이 스며든 팝이에요."],
+    ["Bruno Mars","Just the Way You Are","petals","#2a1a1a","#c26a4a","#ffe0c8","있는 그대로의 사랑","있는 그대로의 모습이 완벽하다고 말해 주는 다정한 사랑 노래예요."],
+    ["Malcolm Todd","Chest Pain (I Love)","fireflies","#1a1a1a","#4a3a2a","#ffd9a0","가슴 아린 사랑","가슴이 아릴 만큼 누군가를 좋아하는 마음이 느껴지는 곡이에요."]
+  ];
+
+  SONGS.push(
+    ["Dua Lipa","Levitating","stars","#1a0f3a","#7a2fd0","#ff9ff3","디스코 무중력","디스코 리듬이 몸을 붕 띄우는 것 같은 신나는 댄스 팝이에요. 밝은 신스와 통통 튀는 베이스가 특징이에요."],
+    ["Harry Styles","As It Was","fireflies","#2a1030","#d9486a","#ffd9a8","빠르게 흐르는 쓸쓸함","경쾌한 비트 위에 변해 버린 관계의 쓸쓸함을 얹은 곡이에요. 밝은 소리와 아린 감정의 대비가 매력이에요."],
+    ["Ed Sheeran","Shape of You","bubbles","#0f2a3a","#e07020","#fff3b0","끌리는 리듬","통통 튀는 마림바 리듬이 계속 맴도는 팝이에요. 처음 끌리는 순간의 설렘을 담았어요."],
+    ["Adele","Someone Like You","rain","#141824","#3a4a6a","#a5c8ff","피아노 이별","피아노 한 대와 목소리만으로 이별 뒤의 마음을 끝까지 끌고 가는 발라드예요. 후반으로 갈수록 감정이 커져요."],
+    ["Coldplay","Yellow","stars","#0a1a2a","#c99a00","#fff3a0","노란 별빛","밤하늘의 별과 노란빛으로 애틋한 사랑을 그려 낸 밴드 사운드의 곡이에요."],
+    ["Charlie Puth","We Don't Talk Anymore","rain","#151a2a","#4a5a8a","#c5d3ff","말이 없어진 사이","한때 가까웠던 사람과 말이 끊긴 지금을 담담하게 되짚는 팝이에요."],
+    ["Imagine Dragons","Believer","embers","#1a0a0a","#a01818","#ffb347","고통을 힘으로","아픔을 힘으로 바꾸겠다는 마음을 묵직한 드럼과 함께 터뜨리는 록 팝이에요."],
+    ["Miley Cyrus","Flowers","petals","#2a1a10","#d98a2a","#ffe0a8","혼자서도 괜찮아","이별 뒤 스스로에게 꽃을 사 주며 당당해지는 마음을 담은 산뜻한 팝이에요."],
+    ["Lady Gaga & Bruno Mars","Die With A Smile","fireflies","#1a0a1a","#7a2a4a","#ffd6a5","마지막까지 함께","세상이 끝나도 곁에 있고 싶다는 마음을 두 목소리로 나누어 부르는 따뜻한 곡이에요."],
+    ["Doja Cat","Say So","sparkle","#2a103a","#d94a9a","#ffd6f5","디스코 팝","통통 튀는 디스코 그루브에 장난스러운 랩이 섞인 곡이에요. 가볍게 몸을 흔들게 돼요."],
+    ["Gracie Abrams","That's So True","hearts","#1a1a3a","#8a5ac8","#ffd6f0","들킨 마음","수줍게 털어놓는 속마음이 후렴에서 벅차게 커지는 곡이에요."],
+    ["Lana Del Rey","Summertime Sadness","fireflies","#1a0f30","#c2506a","#ffc4a8","노을빛 우울","노을처럼 느리고 깊게 번지는 여름밤의 우울을 담은 곡이에요."]
+  );
+  var TH = "1223410141" + "1143202444" + "3244445005" + "2050550014" + "4241231212" + "4142133121" + "1114142422" + "1330101555" + "0115023504" + "3321501050" + "102050415123";
+  var THN = ["슬픈","신나는","설레는","몽환","강렬","따뜻"];
+  var TIP = ["조용히 감정을 털어놓고 싶은 밤에 들어 보세요.","기분을 끌어올리고 싶을 때, 이동 중에 틀어 보세요.","두근거리는 하루의 시작이나 산책길에 잘 어울려요.","불을 낮추고 이어폰으로 혼자 빠져들기 좋아요.","운동이나 집중이 필요한 순간에 힘을 줘요.","따뜻한 차 한 잔과 함께 편하게 듣기 좋아요."];
+  var EMO = "💼 💘 ⚡ 🔮 🔥 🌴 ⭐ 👗 🖤 🏢 💥 🧈 🤘 🌊 🧢 ❄️ 🙈 🌟 🎭 🛡️ 🌃 🧲 👹 🔨 🎤 🚪 🍂 👋 🕊️ ✉️ 🌸 🍃 🌾 💧 🍳 📖 🌷 🎉 🌶️ 🏴‍☠️ 🌀 🔍 ☁️ 👍 💋 🌙 🍿 🚨 🎸 🍬 ✅ 👑 🛹 ❓ 💎 🥀 🎻 🦋 ⏰ 🍯 🪙 🏃 💜 🙌 😎 🤠 📣 🐍 🧸 🗓️ 🕺 🌹 🎠 ☠️ 🎧 🍡 🚦 📚 🕯️ ⏳ 📱 🌼 ✈️ 💌 🕳️ 💯 🫧 🖋️ ☔ 💪 🚇 📷 🗼 🚗 🐦 🦇 ☕ 💔 😊 🫀 🚀 🌅 🎶 🌧️ 💛 📵 🦁 💐 🍷 🐱 😳 🌆".split(" ");
+  function ls(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
+  function sv(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var bag = [], drawn = [], busy = false, layer = 0, current = -1;
+
+  var MY = ls('my', []), FAV = ls('fav', []), CUST = ls('cust', []), mode = 'all', theme = -1;
+  var PAL = [['#1a1240','#5a2e8a','#ffd166'],['#0f2a4a','#2a7ab0','#a5e3ff'],['#2a0f2a','#c2306a','#ffb3d1'],['#10301f','#2a8a5a','#c8ffd9']];
+  var FXS = ['sparkle','stars','fireflies','petals','bubbles','hearts','confetti'];
+  function addCust(a, t) { var p = PAL[SONGS.length % 4]; SONGS.push([a, t, FXS[SONGS.length % 7], p[0], p[1], p[2], '내가 고른 곡', '내가 직접 추가한 곡이에요. 좋아하는 이유를 떠올리며 들어 보세요.']); TH += '6'; return SONGS.length - 1; }
+  CUST.forEach(function (c) { addCust(c[0], c[1]); });
+  function key(i) { return SONGS[i][0] + '|' + SONGS[i][1]; }
+  function pool() { return SONGS.map(function (_, i) { return i; }).filter(function (i) {
+    var k = key(i); return (mode === 'all' || (mode === 'my' ? MY : FAV).indexOf(k) > -1) && (theme < 0 || +TH[i] === theme); }); }
+  function toast(t) { var e = $('toast'); e.textContent = t; e.className = 'toast on'; clearTimeout(toast.t); toast.t = setTimeout(function () { e.className = 'toast'; }, 2600); }
+  function shuffleBag() {
+    bag = pool();
+    for (var i = bag.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = bag[i]; bag[i] = bag[j]; bag[j] = t;
+    }
+  }
+  shuffleBag();
+
+  function updateCount() { $('count').textContent = drawn.length ? drawn.length + '곡 뽑음' : ''; }
+
+
+  /* ---------- 뽑기 머신 캡슐 ---------- */
+  (function () {
+    var ns = 'http://www.w3.org/2000/svg', g = document.getElementById('caps');
+    var cols = ['#ff6b9a', '#ffd166', '#6ee7b7', '#7cc4ff', '#c39bff', '#ff9f6b'];
+    var pos = [[88,128,10],[120,134,-20],[152,126,30],[72,100,-15],[104,104,25],[136,100,-30],[168,98,12],[92,74,40],[124,72,-10],[154,76,20],[114,46,-25]];
+    pos.forEach(function (p, i) {
+      var o = document.createElementNS(ns, 'g');
+      o.setAttribute('transform', 'translate(' + p[0] + ' ' + p[1] + ') rotate(' + p[2] + ')');
+      var c = document.createElementNS(ns, 'g');
+      c.setAttribute('class', 'cap'); c.style.setProperty('--d', (i * 0.04) + 's');
+      c.innerHTML = '<path d="M-13 0 A13 13 0 0 1 13 0Z" fill="' + cols[i % cols.length] + '"/><path d="M-13 0 A13 13 0 0 0 13 0Z" fill="#fff" fill-opacity=".92"/>';
+      o.appendChild(c); g.appendChild(o);
+    });
+  })();
+
+  /* ---------- 배경 ---------- */
+  function setBackground(s) {
+    var next = layer === 0 ? $('bgB') : $('bgA');
+    var prev = layer === 0 ? $('bgA') : $('bgB');
+    next.style.background = 'linear-gradient(170deg,' + s[3] + ' 0%,' + s[4] + ' 100%)';
+    next.style.opacity = 1; prev.style.opacity = 0;
+    layer = 1 - layer;
+    document.documentElement.style.setProperty('--accent', s[5]);
+    document.documentElement.style.background = s[3];
+  }
+  // 첫 화면 배경
+  $('bgA').style.background = 'linear-gradient(170deg,#1a1240 0%,#5a2e8a 100%)';
+  $('bgA').style.opacity = 1;
+
+  /* ---------- 파티클 효과 ---------- */
+  var cv = $('fx'), ctx = cv.getContext('2d'), W = 0, H = 0, dpr = 1;
+  var fx = 'sparkle', acc = '#ffd166', c2 = '#5a2e8a', P = [], frame = 0;
+  var spd = reduce ? .25 : 1;
+
+  function rgba(h, a) { var n = parseInt(h.slice(1), 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
+  function R(a, b) { return a + Math.random() * (b - a); }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    build();
+  }
+
+  function spawn(init) {
+    switch (fx) {
+      case 'stars':     return { x: R(0, W), y: R(0, H), r: R(.3, 1.5), p: R(0, 6.3), s: R(.01, .04), warm: Math.random() < .2 };
+      case 'fireflies': return { x: R(0, W), y: R(0, H), r: R(1.5, 3.5), vx: R(-.25, .25), vy: R(-.3, .1), p: R(0, 6.3) };
+      case 'petals':    return { x: R(0, W), y: init ? R(0, H) : -20, r: R(4, 9), vx: R(.2, 1), vy: R(.7, 1.6), rot: R(0, 6.3), vr: R(-.03, .03), p: R(0, 6.3) };
+      case 'rain':      return { x: R(0, W + 100), y: init ? R(0, H) : -30, l: R(12, 26), v: R(11, 18) };
+      case 'snow':      return { x: R(0, W), y: init ? R(0, H) : -10, r: R(1, 3.2), vy: R(.5, 1.4), p: R(0, 6.3) };
+      case 'bubbles':   return { x: R(0, W), y: init ? R(0, H) : H + 30, r: R(4, 20), vy: R(.3, 1), p: R(0, 6.3) };
+      case 'sparkle':   return { x: R(0, W), y: R(0, H), s: R(5, 14), t: init ? R(0, 200) : 0, max: R(120, 260) };
+      case 'embers':    return { x: R(0, W), y: init ? R(0, H) : H + 10, r: R(1, 3), vx: R(-.4, .4), vy: R(.5, 1.6), p: R(0, 6.3) };
+      case 'confetti':  return { x: R(0, W), y: init ? R(0, H) : -20, w: R(5, 10), h: R(3, 6), vx: R(-.6, .6), vy: R(1, 2.6), rot: R(0, 6.3), vr: R(-.12, .12), c: [acc, '#ffffff', c2, '#ffd0e8'][Math.floor(R(0, 4))] };
+      case 'hearts':    return { x: R(0, W), y: init ? R(0, H) : H + 20, s: R(7, 17), vy: R(.5, 1.4), p: R(0, 6.3) };
+      case 'pulse':     return { r: init ? R(0, Math.max(W, H) * .6) : 0, max: Math.max(W, H) * .7 };
+    }
+  }
+  function build() {
+    P = [];
+    var n = { stars: Math.round(W * H / 4500), fireflies: 40, petals: 36, rain: 130, snow: 90, bubbles: 30, sparkle: 44, embers: 60, confetti: 60, hearts: 26, pulse: 5 }[fx];
+    for (var i = 0; i < n; i++) P.push(spawn(true));
+  }
+  function setFx(s) { fx = s[2]; acc = s[5]; c2 = s[4]; build(); }
+
+  function heart(x, y, s) {
+    ctx.beginPath();
+    ctx.moveTo(x, y + s * .3);
+    ctx.bezierCurveTo(x - s, y - s * .4, x - s * .4, y - s, x, y - s * .35);
+    ctx.bezierCurveTo(x + s * .4, y - s, x + s, y - s * .4, x, y + s * .3);
+    ctx.fill();
+  }
+
+  function tick() {
+    frame++;
+    ctx.clearRect(0, 0, W, H);
+    extraDraw();
+    for (var i = 0; i < P.length; i++) {
+      var p = P[i];
+      switch (fx) {
+        case 'stars':
+          p.p += p.s * spd;
+          ctx.fillStyle = p.warm ? rgba(acc, .35 + .65 * Math.abs(Math.sin(p.p))) : 'rgba(235,235,255,' + (.3 + .7 * Math.abs(Math.sin(p.p))) + ')';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill(); break;
+        case 'fireflies':
+          p.p += .02 * spd; p.x += (p.vx + Math.sin(p.p) * .3) * spd; p.y += (p.vy + Math.cos(p.p * .8) * .2) * spd;
+          if (p.x < -10) p.x = W + 10; if (p.x > W + 10) p.x = -10; if (p.y < -10) p.y = H + 10; if (p.y > H + 10) p.y = -10;
+          var g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
+          var a = .35 + .65 * Math.abs(Math.sin(p.p * 1.4));
+          g.addColorStop(0, rgba(acc, a)); g.addColorStop(1, rgba(acc, 0));
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 5, 0, 6.283); ctx.fill(); break;
+        case 'petals':
+          p.p += .02 * spd; p.x += (p.vx + Math.sin(p.p) * .6) * spd; p.y += p.vy * spd; p.rot += p.vr * spd;
+          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = rgba(acc, .8);
+          ctx.beginPath(); ctx.ellipse(0, 0, p.r, p.r * .55, 0, 0, 6.283); ctx.fill(); ctx.restore();
+          if (p.y > H + 20 || p.x > W + 20) P[i] = spawn(false); break;
+        case 'rain':
+          p.x -= p.v * .25 * spd; p.y += p.v * spd;
+          ctx.strokeStyle = rgba(acc, .45); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.l * .25, p.y - p.l); ctx.stroke();
+          if (p.y > H + 30) P[i] = spawn(false); break;
+        case 'snow':
+          p.p += .015 * spd; p.x += Math.sin(p.p) * .5 * spd; p.y += p.vy * spd;
+          ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+          if (p.y > H + 10) P[i] = spawn(false); break;
+        case 'bubbles':
+          p.p += .02 * spd; p.x += Math.sin(p.p) * .5 * spd; p.y -= p.vy * spd;
+          ctx.strokeStyle = rgba(acc, .6); ctx.fillStyle = rgba(acc, .08); ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill(); ctx.stroke();
+          if (p.y < -30) P[i] = spawn(false); break;
+        case 'sparkle':
+          p.t += spd; var k = Math.sin(Math.PI * p.t / p.max);
+          if (p.t >= p.max) { P[i] = spawn(false); break; }
+          ctx.save(); ctx.translate(p.x, p.y); ctx.fillStyle = rgba(acc, Math.max(0, k));
+          var s = p.s * k;
+          ctx.beginPath(); ctx.moveTo(0, -s); ctx.quadraticCurveTo(0, 0, s, 0); ctx.quadraticCurveTo(0, 0, 0, s); ctx.quadraticCurveTo(0, 0, -s, 0); ctx.quadraticCurveTo(0, 0, 0, -s); ctx.fill();
+          ctx.restore(); break;
+        case 'embers':
+          p.p += .03 * spd; p.x += (p.vx + Math.sin(p.p) * .4) * spd; p.y -= p.vy * spd;
+          var g2 = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 4);
+          g2.addColorStop(0, rgba(acc, .95)); g2.addColorStop(1, rgba(acc, 0));
+          ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 4, 0, 6.283); ctx.fill();
+          if (p.y < -20) P[i] = spawn(false); break;
+        case 'confetti':
+          p.x += p.vx * spd; p.y += p.vy * spd; p.rot += p.vr * spd;
+          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.c; ctx.globalAlpha = .9;
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+          if (p.y > H + 20) P[i] = spawn(false); break;
+        case 'hearts':
+          p.p += .02 * spd; p.x += Math.sin(p.p) * .6 * spd; p.y -= p.vy * spd;
+          ctx.fillStyle = rgba(acc, .7); heart(p.x, p.y, p.s);
+          if (p.y < -30) P[i] = spawn(false); break;
+        case 'pulse':
+          p.r += 1.6 * spd;
+          var al = Math.max(0, 1 - p.r / p.max);
+          ctx.strokeStyle = rgba(acc, al * .7); ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(W / 2, H * .5, p.r, 0, 6.283); ctx.stroke();
+          if (p.r > p.max) { p.r = 0; } break;
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  var AC = null, snd = true;
+  function ac() { try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); } catch (e) {} return AC; }
+  function tone(f, t0, d, ty, v) { var a = ac(); if (!a || !snd) return; var o = a.createOscillator(), g = a.createGain(), t = a.currentTime + t0;
+    o.type = ty || 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v || .2, t + .01); g.gain.exponentialRampToValueAtTime(.001, t + d);
+    o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + .05); }
+  function sTick() { tone(500 + Math.random() * 300, 0, .05, 'square', .05); }
+  function sThud() { tone(160, 0, .18, 'triangle', .3); }
+  function sDing() { tone(1318.5, 0, .9, 'sine', .22); tone(1760, .12, 1.1, 'sine', .2); tone(2637, .24, 1.2, 'sine', .14); }
+  var E = [], B = [], curE = '✨';
+  function buildE() { E = []; for (var i = 0; i < 16; i++) E.push({ x: R(0, W), y: R(0, H), s: R(16, 34), vy: R(.25, .9), p: R(0, 6.3), a: R(.25, .6) }); }
+  function burst() { for (var i = 0; i < 80; i++) { var a = Math.random() * 6.283, v = R(3, 12); B.push({ x: W / 2, y: H * .5, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 2, l: 1, c: i % 3 ? acc : '#ffffff', s: R(2, 5) }); } }
+  function extraDraw() {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (var i = 0; i < E.length; i++) { var e = E[i]; e.p += .015 * spd; e.x += Math.sin(e.p) * .5 * spd; e.y -= e.vy * spd; if (e.y < -30) { e.y = H + 30; e.x = R(0, W); }
+      ctx.globalAlpha = e.a; ctx.font = e.s + 'px serif'; ctx.fillText(curE, e.x, e.y); }
+    for (var j = B.length - 1; j >= 0; j--) { var b = B[j]; b.x += b.vx; b.y += b.vy; b.vy += .22; b.vx *= .985; b.l -= .016;
+      if (b.l <= 0) { B.splice(j, 1); continue; } ctx.globalAlpha = b.l; ctx.fillStyle = b.c; ctx.beginPath(); ctx.arc(b.x, b.y, b.s, 0, 6.283); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  }
+  window.addEventListener('resize', buildE);
+  window.addEventListener('resize', resize);
+  resize(); buildE(); requestAnimationFrame(tick);
+
+  /* ---------- 화면 ---------- */
+  function showResult(idx, animate) {
+    var s = SONGS[idx], th = +TH[idx]; current = idx;
+    setBackground(s); curE = EMO[idx] || '🎵'; setFx(s); buildE(); if (animate) burst();
+    $('rArtist').textContent = s[0];
+    $('rTitle').textContent = s[1];
+    $('rMood').textContent = (THN[th] ? THN[th] + ' · ' : '') + s[6];
+    $('rDesc').textContent = s[7] + (TIP[th] ? ' ' + TIP[th] : '');
+    $('yt').href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(s[0] + ' ' + s[1]);
+    favBtn();
+    $('roll').hidden = true;
+    $('pick').style.display = 'none'; $('intro').style.display = 'none';
+    var r = $('result'); r.classList.remove('on'); void r.offsetWidth; r.classList.add('on');
+    renderHistory();
+  }
+  function favBtn() { $('fav').textContent = FAV.indexOf(key(current)) > -1 ? '♥ 즐겨찾기됨' : '♡ 즐겨찾기'; }
+
+  function renderHistory() {
+    var h = $('history'); h.innerHTML = '';
+    drawn.forEach(function (idx) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip' + (idx === current ? ' cur' : '');
+      b.textContent = SONGS[idx][0] + ' - ' + SONGS[idx][1];
+      b.addEventListener('click', function () { if (!busy) showResult(idx); });
+      h.appendChild(b);
+    });
+    h.scrollLeft = h.scrollWidth;
+  }
+
+  function draw() {
+    if (busy) return;
+    if (!pool().length) { toast(mode === 'all' ? '이 분위기에 맞는 곡이 없어요' : '고른 곡이 없어요. 먼저 내 리스트나 ♥를 채워 주세요'); return; }
+    busy = true; ac();
+    if (!bag.length) { shuffleBag(); drawn = []; }
+    var pickIdx = bag.pop();
+    drawn.push(pickIdx); updateCount();
+    var m = $('pick');
+    $('result').classList.remove('on'); $('intro').style.display = 'none';
+    m.style.display = 'block'; m.disabled = true; m.className = 'machine busy cranking';
+    var roll = $('roll'); roll.hidden = false;
+    var steps = reduce ? 4 : 16, i = 0;
+    (function step() {
+      if (i < steps) {
+        var rnd = SONGS[Math.floor(Math.random() * SONGS.length)];
+        $('rollA').textContent = rnd[0]; $('rollT').textContent = rnd[1]; sTick();
+        var delay = 60 + Math.pow(i / steps, 2.2) * 400;
+        i++; setTimeout(step, delay);
+      } else {
+        $('rollT').style.filter = 'none';
+        $('rollA').textContent = SONGS[pickIdx][0]; $('rollT').textContent = SONGS[pickIdx][1];
+        m.className = 'machine busy dropping'; sThud();
+        setTimeout(function () {
+          m.className = 'machine busy dropping open'; sDing();
+          setTimeout(function () {
+            busy = false; m.disabled = false; m.className = 'machine'; $('rollT').style.filter = '';
+            showResult(pickIdx, true);
+          }, reduce ? 100 : 750);
+        }, reduce ? 100 : 950);
+      }
+    })();
+  }
+
+  /* ---------- 필터 / 내 리스트 / 즐겨찾기 / 게시판 ---------- */
+  function chip(t, on, fn) { var b = document.createElement('button'); b.type = 'button'; b.className = 'fc' + (on ? ' on' : ''); b.textContent = t; b.onclick = fn; return b; }
+  function renderFilters() {
+    var f = $('filters'); f.innerHTML = '';
+    [['all', '전체'], ['my', '내 리스트'], ['fav', '♥ 즐겨찾기']].forEach(function (m) { f.appendChild(chip(m[1], mode === m[0], function () { mode = m[0]; shuffleBag(); renderFilters(); })); });
+    var br = document.createElement('div'); br.className = 'brk'; f.appendChild(br);
+    ['🌈 모든 분위기', '😢 슬픈', '🎉 신나는', '💗 설레는', '🌙 몽환', '🔥 강렬', '☕ 따뜻'].forEach(function (n, i) { f.appendChild(chip(n, theme === i - 1, function () { theme = i - 1; shuffleBag(); renderFilters(); })); });
+  }
+  function renderMy() {
+    var q = $('mySearch').value.trim().toLowerCase(), box = $('myList'); box.innerHTML = '';
+    SONGS.forEach(function (s, i) {
+      var k = key(i); if (q && (s[0] + ' ' + s[1]).toLowerCase().indexOf(q) < 0) return;
+      var l = document.createElement('label'), c = document.createElement('input'), sp = document.createElement('span');
+      l.className = 'row'; c.type = 'checkbox'; c.checked = MY.indexOf(k) > -1;
+      c.onchange = function () { var p = MY.indexOf(k); if (c.checked && p < 0) MY.push(k); if (!c.checked && p > -1) MY.splice(p, 1); sv('my', MY); $('myCnt').textContent = MY.length + '곡'; shuffleBag(); };
+      sp.textContent = s[0] + ' - ' + s[1]; l.appendChild(c); l.appendChild(sp); box.appendChild(l);
+    });
+    $('myCnt').textContent = MY.length + '곡';
+  }
+  function openM(id) { $(id).hidden = false; }
+  document.querySelectorAll('.modal').forEach(function (m) { m.addEventListener('click', function (e) { if (e.target === m || e.target.hasAttribute('data-close')) m.hidden = true; }); });
+  $('openMy').onclick = function () { renderMy(); openM('myModal'); };
+  $('mySearch').oninput = renderMy;
+  $('cAdd').onclick = function () {
+    var a = $('cA').value.trim(), t = $('cT').value.trim(); if (!a || !t) { toast('아티스트와 제목을 모두 적어 주세요'); return; }
+    var k = a + '|' + t, i = -1; SONGS.forEach(function (x, n) { if (x[0] + '|' + x[1] === k) i = n; });
+    if (i < 0) { CUST.push([a, t]); sv('cust', CUST); addCust(a, t); }
+    if (MY.indexOf(k) < 0) MY.push(k); sv('my', MY); $('cA').value = ''; $('cT').value = ''; renderMy(); shuffleBag(); toast('내 리스트에 담았어요');
+  };
+  $('fav').onclick = function () { var k = key(current), p = FAV.indexOf(k); if (p > -1) FAV.splice(p, 1); else FAV.push(k); sv('fav', FAV); favBtn(); shuffleBag(); };
+  $('snd').onclick = function () { snd = !snd; this.textContent = snd ? '🔊' : '🔇'; if (snd) { ac(); sTick(); } };
+
+  var DB = null;
+  function boardSong() { $('bdSong').textContent = current > -1 ? '올릴 곡: ' + SONGS[current][0] + ' - ' + SONGS[current][1] : '먼저 노래를 뽑으면 여기에 올릴 수 있어요'; }
+  $('openBd').onclick = function () { boardSong(); openM('bdModal'); };
+  $('toBd').onclick = function () { boardSong(); openM('bdModal'); };
+  function renderBoard(rows) {
+    var b = $('bdList'); b.innerHTML = ''; if (!rows.length) { b.textContent = '아직 글이 없어요. 첫 글을 남겨 보세요!'; return; }
+    rows.forEach(function (r) {
+      var d = document.createElement('div'), h = document.createElement('b'), p = document.createElement('div'), a = document.createElement('a');
+      d.className = 'post'; h.textContent = '🎵 ' + String(r.a || '').slice(0, 60) + ' - ' + String(r.s || '').slice(0, 80);
+      p.textContent = String(r.n || '익명').slice(0, 12) + (r.m ? ': ' + String(r.m).slice(0, 80) : '');
+      a.textContent = '▶ 들어보기'; a.target = '_blank'; a.rel = 'noopener'; a.href = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(String(r.a || '') + ' ' + String(r.s || ''));
+      d.appendChild(h); d.appendChild(p); d.appendChild(a); b.appendChild(d);
+    });
+  }
+  if (window.claude && claude.use) {
+    claude.use('db').then(function (d) {
+      DB = d; if (!d) { $('boardMsg').textContent = '이 화면에서는 게시판을 쓸 수 없어요'; return; }
+      d.collection('board').orderBy('t', 'desc').limit(30).onSnapshot(function (sn) { renderBoard(sn.docs.map(function (x) { return x.data(); })); },
+        function () { $('boardMsg').textContent = '게시판을 불러오지 못했어요'; });
+    }).catch(function () { $('boardMsg').textContent = '게시판을 쓸 수 없어요'; });
+  } else { $('boardMsg').textContent = '이 화면에서는 게시판을 쓸 수 없어요'; }
+  $('bdPost').onclick = function () {
+    if (!DB) { toast('게시판을 쓸 수 없어요'); return; } if (current < 0) { toast('먼저 노래를 뽑아 주세요'); return; }
+    var s = SONGS[current];
+    DB.collection('board').add({ n: $('bdName').value.trim().slice(0, 12) || '익명', m: $('bdMsg').value.trim().slice(0, 80), a: s[0], s: s[1], t: Date.now() })
+      .then(function () { $('bdMsg').value = ''; toast('게시판에 올렸어요!'); }).catch(function () { toast('글쓰기 권한이 없어요'); });
+  };
+  renderFilters();
+
+  $('pick').addEventListener('click', draw);
+  $('again').addEventListener('click', draw);
+})();
+</script>
+</body>
+</html>
